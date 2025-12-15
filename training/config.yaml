@@ -1,0 +1,196 @@
+# GigaLearnCPP Training Configuration
+# 2v2 Pro-Level Bot with 7-Stage Curriculum Learning
+
+# ============================================================================
+# GENERAL SETTINGS
+# ============================================================================
+project_name: "RocketLeague_2v2_Pro"
+run_name: "7stage_curriculum_v1"
+save_dir: "./training/models"
+log_dir: "./training/logs"
+
+# GPU Settings
+device: "cuda"  # Use "cuda" for GPU, "cpu" for CPU
+num_workers: 4  # Parallel environments (adjust based on your GPU VRAM)
+
+# ============================================================================
+# CURRICULUM STAGES
+# ============================================================================
+curriculum:
+  # Stage 1: Ball Contact & Awareness
+  stage1:
+    name: "ball_contact"
+    timesteps: 100000000  # 100M steps (~4-8 hours on GPU)
+    learning_rate: 0.0003
+    opponent_difficulty: "none"  # No opponent
+    ball_speed: "slow"
+    reward_weights:
+      ball_touch: 5.0
+      facing_ball: 0.1
+      boost_pickup: 0.5
+      goal: 100.0
+    success_criteria:
+      ball_touch_rate: 0.80  # 80% touch rate
+
+  # Stage 2: Directional Hitting & Goal Awareness
+  stage2:
+    name: "goal_shooting"
+    timesteps: 200000000  # 200M steps (~8-16 hours)
+    learning_rate: 0.0003
+    opponent_difficulty: "stationary"
+    ball_speed: "medium"
+    reward_weights:
+      ball_touch: 2.0
+      shot_towards_goal: 10.0
+      shot_on_target: 20.0
+      goal: 100.0
+      own_goal_penalty: -50.0
+    success_criteria:
+      goal_direction_rate: 0.60  # 60% towards goal
+
+  # Stage 3: Power & Accuracy
+  stage3:
+    name: "power_accuracy"
+    timesteps: 300000000  # 300M steps (~1-2 days)
+    learning_rate: 0.0002
+    opponent_difficulty: "basic"
+    ball_speed: "fast"
+    reward_weights:
+      ball_touch: 1.0
+      shot_power: 15.0  # Scaled by velocity
+      shot_accuracy: 10.0
+      dribble: 2.0
+      boost_management: 0.5
+      goal: 100.0
+    success_criteria:
+      goal_rate: 0.40
+
+  # Stage 4: Aerial Fundamentals
+  stage4:
+    name: "aerial_basics"
+    timesteps: 500000000  # 500M steps (~2-3 days)
+    learning_rate: 0.0002
+    opponent_difficulty: "intermediate"
+    ball_spawn_height: "varied"  # 1-6 unreal units
+    reward_weights:
+      aerial_touch: 15.0
+      aerial_height_bonus: 5.0  # More reward for higher aerials
+      fast_aerial: 10.0
+      aerial_goal: 150.0
+      aerial_miss_penalty: -5.0
+      landing_recovery: 2.0
+    success_criteria:
+      aerial_success_rate: 0.40
+
+  # Stage 5: Air Dribbles
+  stage5:
+    name: "air_dribbles"
+    timesteps: 600000000  # 600M steps (~3-4 days)
+    learning_rate: 0.00015
+    opponent_difficulty: "advanced"
+    ball_spawn_height: "high"
+    reward_weights:
+      aerial_touch: 10.0
+      consecutive_touches: 15.0  # Multiplier per touch
+      air_dribble_proximity: 5.0
+      air_roll_control: 3.0
+      air_dribble_goal: 200.0
+    success_criteria:
+      air_dribble_rate: 0.20
+
+  # Stage 6: Double Taps & Wall Play
+  stage6:
+    name: "double_taps"
+    timesteps: 600000000  # 600M steps (~3-4 days)
+    learning_rate: 0.00015
+    opponent_difficulty: "expert"
+    scenario: "backboard_heavy"
+    reward_weights:
+      backboard_touch: 8.0
+      double_tap_setup: 20.0
+      double_tap_goal: 250.0
+      wall_aerial: 10.0
+      rebound_read: 10.0
+    success_criteria:
+      double_tap_rate: 0.15
+
+  # Stage 7: 2v2 Game Sense & Pro Play
+  stage7:
+    name: "pro_2v2_gamesense"
+    timesteps: 1000000000  # 1B steps (~4-7 days)
+    learning_rate: 0.0001
+    mode: "2v2"
+    opponent_difficulty: "self_play"  # Train against itself
+    reward_weights:
+      positioning: 2.0
+      rotation: 3.0
+      defensive_save: 50.0
+      passing: 75.0
+      assist: 75.0
+      ball_chasing_penalty: -5.0
+      out_of_position_penalty: -2.0
+      boost_starve: 5.0
+      fake_challenge: 10.0
+      goal: 100.0
+      win: 300.0
+      loss: -300.0
+    success_criteria:
+      win_rate: 0.55  # Against previous versions
+
+# ============================================================================
+# PPO HYPERPARAMETERS
+# ============================================================================
+ppo:
+  policy:
+    layer_sizes: [512, 512, 512, 256]  # Actor network
+    activation: "relu"
+    layer_norm: true
+  
+  critic:
+    layer_sizes: [512, 512, 512, 256]  # Critic network
+    activation: "relu"
+    layer_norm: true
+  
+  shared_layers: true  # Share early layers between policy/critic
+  
+  # Training parameters
+  batch_size: 100000
+  minibatch_size: 25000
+  epochs: 3
+  gamma: 0.995  # Discount factor
+  gae_lambda: 0.95
+  clip_range: 0.2
+  value_clip_range: 0.2
+  entropy_coef: 0.01
+  value_loss_coef: 0.5
+  max_grad_norm: 0.5
+
+# ============================================================================
+# CHECKPOINT SETTINGS
+# ============================================================================
+checkpoints:
+  save_frequency: 50000000  # Save every 50M steps
+  keep_best: 5  # Keep 5 best checkpoints
+  keep_stage_finals: true  # Always keep stage completion checkpoints
+
+# ============================================================================
+# VISUALIZATION (RocketSimVis)
+# ============================================================================
+visualization:
+  enabled: true
+  host: "localhost"
+  port: 7777
+  update_frequency: 100  # Update every 100 steps
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+logging:
+  tensorboard: true
+  console_frequency: 1000  # Print stats every 1000 steps
+  metrics:
+    - reward_per_episode
+    - goal_rate
+    - aerial_success_rate
+    - win_rate
+    - average_episode_length
