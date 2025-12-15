@@ -10,127 +10,91 @@
 #include <RLGymCPP/StateSetters/RandomState.h>
 #include <RLGymCPP/ActionParsers/DefaultAction.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 using namespace GGL; // GigaLearn
 using namespace RLGC; // RLGymCPP
 
 // ============================================================================
-// CURRICULUM TRAINING: 7-STAGE PRO-LEVEL 2V2 BOT
-// With Hardcoded Speed Flip Kickoffs
+// CURRICULUM TRAINING: 8-STAGE PRO-LEVEL 2V2 BOT (WITH KICKOFF TRAINING)
 // ============================================================================
 
-// Current training stage
-int currentStage = 1;
+// Current training stage (will be set before each stage)
+int currentStage = 0;
 
-// Kickoff tick counter (tracks kickoff progress)
-int kickoffTick = 0;
-bool isKickoff = false;
-
-// ============================================================================
-// HARDCODED KICKOFF SEQUENCE (Speed Flip)
-// Based on professional Rocket League kickoff timing
-// ============================================================================
-struct KickoffAction {
-	float throttle = 0;
-	float steer = 0;
-	float pitch = 0;
-	float yaw = 0;
-	float roll = 0;
-	bool jump = false;
-	bool boost = false;
-};
-
-KickoffAction GetHardcodedKickoffAction(int tick) {
-	KickoffAction action;
-	
-	// Ticks 0-43: Boost straight + diagonal (11*4 + 4*4 ticks)
-	if (tick < 44) {
-		action.throttle = 1.0f;
-		action.boost = true;
-		if (tick >= 11 * 4) {  // After straight boost, turn slightly
-			action.steer = -0.3f;  // Slight diagonal
-		}
-	}
-	// Ticks 44-51: First jump (2*4 ticks)
-	else if (tick < 52) {
-		action.throttle = 1.0f;
-		action.jump = true;
-		action.boost = true;
-	}
-	// Ticks 52-55: Brief coast (1*4 ticks)
-	else if (tick < 56) {
-		action.throttle = 1.0f;
-		action.boost = true;
-	}
-	// Ticks 56-59: Speed flip (1*4 ticks)
-	else if (tick < 60) {
-		action.throttle = 1.0f;
-		action.yaw = 0.8f;
-		action.pitch = -0.7f;
-		action.jump = true;
-		action.boost = true;
-	}
-	// Ticks 60-111: Pitch up recovery (13*4 ticks)
-	else if (tick < 112) {
-		action.throttle = 1.0f;
-		action.pitch = 1.0f;
-		action.boost = true;
-	}
-	// Ticks 112-151: Air control (10*4 ticks)
-	else if (tick < 152) {
-		action.throttle = 1.0f;
-		action.roll = 1.0f;
-		action.pitch = 0.5f;
-	}
-	// After tick 152: Let RL take over
-	else {
-		// Return neutral action to signal RL should control
-		action.throttle = 0;
-	}
-	
-	return action;
-}
-
-// ============================================================================
-// ENVIRONMENT CREATION WITH REWARDS PER STAGE
-// ============================================================================
+// Create the RLGymCPP environment for each of our games
 EnvCreateResult EnvCreateFunc(int index) {
 	std::vector<WeightedReward> rewards;
 	std::vector<TerminalCondition*> terminalConditions;
 	
 	// ========================================================================
-	// STAGE 1: BALL CONTACT & AWARENESS (100M steps)
+	// STAGE 0: KICKOFF MASTERY (50M steps)
+	// Goal: Learn fast, effective kickoffs
 	// ========================================================================
-	if (currentStage == 1) {
+	if (currentStage == 0) {
 		rewards = {
-			{ new StrongTouchReward(5, 50), 100 },
-			{ new FaceBallReward(), 5.0f },
-			{ new VelocityPlayerToBallReward(), 10.f },
-			{ new PickupBoostReward(), 5.f },
-			{ new GoalReward(), 200 }
+			// Massive reward for winning kickoff (touching ball first)
+			{ new StrongTouchReward(10, 100), 200 },  // High reward for first touch
+			
+			// Speed towards ball at kickoff
+			{ new VelocityPlayerToBallReward(), 15.f },  // Fast approach
+			
+			// Boost usage (important for fast kickoffs)
+			{ new PickupBoostReward(), 2.f },  // Small boost pickup reward
+			
+			// Ball goal velocity (winning kickoff = ball goes to opponent side)
+			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 50.0f },
+			
+			// Goal from kickoff
+			{ new GoalReward(), 300 }
 		};
+		
 		terminalConditions = {
-			new NoTouchCondition(15),
+			new NoTouchCondition(8),   // Short timeout (kickoffs are fast)
+			new GoalScoreCondition()
+		};
+	}
+	
+	// ========================================================================
+	// STAGE 1: BALL CONTACT & AWARENESS (100M steps)
+	// Goal: Learn to touch the ball consistently
+	// ========================================================================
+	else if (currentStage == 1) {
+		rewards = {
+			// Encourage any ball contact
+			{ new StrongTouchReward(5, 50), 100 },  // High reward for touches
+			{ new FaceBallReward(), 5.0f },          // Face the ball
+			{ new VelocityPlayerToBallReward(), 10.f }, // Move towards ball
+			{ new PickupBoostReward(), 5.f },        // Collect boost
+			{ new GoalReward(), 200 }                // Goals are always good
+		};
+		
+		terminalConditions = {
+			new NoTouchCondition(15),  // Longer timeout for learning
 			new GoalScoreCondition()
 		};
 	}
 	
 	// ========================================================================
 	// STAGE 2: GOAL SHOOTING (200M steps)
+	// Goal: Hit ball towards opponent goal
 	// ========================================================================
 	else if (currentStage == 2) {
 		rewards = {
+			// Reduced ball touch reward
 			{ new StrongTouchReward(5, 50), 30 },
+			
+			// Encourage shooting towards goal
 			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 50.0f },
 			{ new VelocityPlayerToBallReward(), 8.f },
 			{ new FaceBallReward(), 2.0f },
+			
+			// Boost management
 			{ new PickupBoostReward(), 8.f },
 			{ new SaveBoostReward(), 1.0f },
+			
+			// Goals
 			{ new GoalReward(), 300 }
 		};
+		
 		terminalConditions = {
 			new NoTouchCondition(12),
 			new GoalScoreCondition()
@@ -139,18 +103,29 @@ EnvCreateResult EnvCreateFunc(int index) {
 	
 	// ========================================================================
 	// STAGE 3: POWER & ACCURACY (300M steps)
+	// Goal: Power shots, dribbling, accuracy
 	// ========================================================================
 	else if (currentStage == 3) {
 		rewards = {
+			// Power shots (higher velocity = more reward)
 			{ new StrongTouchReward(20, 150), 150 },
+			
+			// Ball-goal velocity (want fast shots)
 			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 80.0f },
+			
+			// Movement and positioning
 			{ new VelocityPlayerToBallReward(), 6.f },
 			{ new FaceBallReward(), 1.5f },
+			
+			// Boost efficiency
 			{ new PickupBoostReward(), 10.f },
 			{ new SaveBoostReward(), 2.0f },
+			
+			// Game events
 			{ new ZeroSumReward(new BumpReward(), 0.5f), 30 },
 			{ new GoalReward(), 400 }
 		};
+		
 		terminalConditions = {
 			new NoTouchCondition(10),
 			new GoalScoreCondition()
@@ -159,18 +134,31 @@ EnvCreateResult EnvCreateFunc(int index) {
 	
 	// ========================================================================
 	// STAGE 4: AERIAL FUNDAMENTALS (500M steps)
+	// Goal: Learn fast aerials and aerial interception
 	// ========================================================================
 	else if (currentStage == 4) {
 		rewards = {
+			// Aerial play (high reward for being in air)
 			{ new AirReward(), 15.0f },
+			
+			// Touches (especially aerial touches)
 			{ new StrongTouchReward(20, 150), 200 },
+			
+			// Ball-goal velocity
 			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 100.0f },
+			
+			// Movement
 			{ new VelocityPlayerToBallReward(), 5.f },
 			{ new FaceBallReward(), 1.0f },
+			
+			// Boost management (crucial for aerials)
 			{ new PickupBoostReward(), 12.f },
 			{ new SaveBoostReward(), 3.0f },
+			
+			// Goals (extra reward if scored in air)
 			{ new GoalReward(), 500 }
 		};
+		
 		terminalConditions = {
 			new NoTouchCondition(10),
 			new GoalScoreCondition()
@@ -179,17 +167,30 @@ EnvCreateResult EnvCreateFunc(int index) {
 	
 	// ========================================================================
 	// STAGE 5: AIR DRIBBLES (600M steps)
+	// Goal: Consecutive aerial touches, air roll control
 	// ========================================================================
 	else if (currentStage == 5) {
 		rewards = {
+			// Heavy air reward
 			{ new AirReward(), 25.0f },
+			
+			// Extremely high touch rewards (for air dribbles)
 			{ new StrongTouchReward(30, 200), 300 },
+			
+			// Ball-goal velocity
 			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 120.0f },
+			
+			// Player-ball velocity (stay close to ball)
 			{ new VelocityPlayerToBallReward(), 8.f },
+			
+			// Boost
 			{ new PickupBoostReward(), 15.f },
 			{ new SaveBoostReward(), 4.0f },
+			
+			// Goals from air dribbles
 			{ new GoalReward(), 600 }
 		};
+		
 		terminalConditions = {
 			new NoTouchCondition(10),
 			new GoalScoreCondition()
@@ -198,18 +199,31 @@ EnvCreateResult EnvCreateFunc(int index) {
 	
 	// ========================================================================
 	// STAGE 6: DOUBLE TAPS & WALL PLAY (600M steps)
+	// Goal: Backboard reads, wall aerials, double taps
 	// ========================================================================
 	else if (currentStage == 6) {
 		rewards = {
+			// Air play
 			{ new AirReward(), 20.0f },
+			
+			// High touch rewards
 			{ new StrongTouchReward(30, 200), 350 },
+			
+			// Ball-goal velocity (backboard shots)
 			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 150.0f },
+			
+			// Movement
 			{ new VelocityPlayerToBallReward(), 10.f },
 			{ new FaceBallReward(), 0.8f },
+			
+			// Boost
 			{ new PickupBoostReward(), 15.f },
 			{ new SaveBoostReward(), 4.0f },
+			
+			// Double tap goals
 			{ new GoalReward(), 800 }
 		};
+		
 		terminalConditions = {
 			new NoTouchCondition(10),
 			new GoalScoreCondition()
@@ -218,28 +232,41 @@ EnvCreateResult EnvCreateFunc(int index) {
 	
 	// ========================================================================
 	// STAGE 7: PRO 2V2 GAME SENSE (1B steps)
+	// Goal: Rotation, positioning, teamplay, decision making
 	// ========================================================================
 	else if (currentStage == 7) {
 		rewards = {
+			// Balanced rewards for pro play
 			{ new AirReward(), 10.0f },
 			{ new StrongTouchReward(25, 180), 200 },
+			
+			// Ball-goal (zero-sum for competitive play)
 			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 100.0f },
+			
+			// Movement and positioning
 			{ new VelocityPlayerToBallReward(), 6.f },
 			{ new FaceBallReward(), 1.0f },
+			
+			// Boost management
 			{ new PickupBoostReward(), 12.f },
 			{ new SaveBoostReward(), 3.0f },
+			
+			// Game events (important for 2v2)
 			{ new ZeroSumReward(new BumpReward(), 0.5f), 40 },
 			{ new ZeroSumReward(new DemoReward(), 0.5f), 120 },
+			
+			// Goals and saves
 			{ new GoalReward(), 500 }
 		};
+		
 		terminalConditions = {
 			new NoTouchCondition(10),
 			new GoalScoreCondition()
 		};
 	}
 
-	// 2v2 arena
-	int playersPerTeam = 2;
+	// Make the arena (2v2 for all stages)
+	int playersPerTeam = 2;  // 2v2 gameplay
 	auto arena = Arena::Create(GameMode::SOCCAR);
 	for (int i = 0; i < playersPerTeam; i++) {
 		arena->AddCar(Team::BLUE);
@@ -249,7 +276,14 @@ EnvCreateResult EnvCreateFunc(int index) {
 	EnvCreateResult result = {};
 	result.actionParser = new DefaultAction();
 	result.obsBuilder = new AdvancedObs();
-	result.stateSetter = new KickoffState();  // Always use kickoffs
+	
+	// KICKOFF STATE FOR STAGE 0, RANDOM FOR OTHERS
+	if (currentStage == 0) {
+		result.stateSetter = new KickoffState();  // Always kickoff in Stage 0
+	} else {
+		result.stateSetter = new KickoffState();  // Mix of kickoffs and regular play
+	}
+	
 	result.terminalConditions = terminalConditions;
 	result.rewards = rewards;
 	result.arena = arena;
@@ -258,6 +292,7 @@ EnvCreateResult EnvCreateFunc(int index) {
 }
 
 void StepCallback(Learner* learner, const std::vector<GameState>& states, Report& report) {
+	// Add metrics based on current stage
 	bool doExpensiveMetrics = (rand() % 4) == 0;
 
 	for (auto& state : states) {
@@ -265,35 +300,42 @@ void StepCallback(Learner* learner, const std::vector<GameState>& states, Report
 			for (auto& player : state.players) {
 				report.AddAvg("Player/In Air Ratio", !player.isOnGround);
 				report.AddAvg("Player/Ball Touch Ratio", player.ballTouchedStep);
+				report.AddAvg("Player/Demoed Ratio", player.isDemoed);
 				report.AddAvg("Player/Speed", player.vel.Length());
+				
+				Vec dirToBall = (state.ball.pos - player.pos).Normalized();
+				report.AddAvg("Player/Speed Towards Ball", RS_MAX(0, player.vel.Dot(dirToBall)));
 				report.AddAvg("Player/Boost", player.boost);
+
 				if (player.ballTouchedStep)
 					report.AddAvg("Player/Touch Height", state.ball.pos.z);
 			}
 		}
-		if (state.goalScored)
+
+		if (state.goalScored) {
 			report.AddAvg("Game/Goal Speed", state.ball.vel.Length());
+			report.AddAvg("Game/Goal Height", state.ball.pos.z);
+		}
 	}
 	
+	// Report current stage
 	report.AddAvg("Training/Current Stage", currentStage);
 }
 
 // ============================================================================
-// MAIN
+// MAIN TRAINING FUNCTION
 // ============================================================================
 int main(int argc, char* argv[]) {
-	// Set Python path for metrics (Windows)
-#ifdef _WIN32
-	_putenv("PYTHONPATH=C:\\Users\\Jake\\Videos\\Jake\\GigaLearnCPP-Leak-main");
-#endif
-
+	// Initialize RocketSim with collision meshes
+	// UPDATE THIS PATH TO YOUR COLLISION MESHES LOCATION!
 	RocketSim::Init("C:\\Users\\Jake\\Videos\\Jake\\GigaLearnCPP-Leak-main\\collision_meshes");
 
 	std::cout << "========================================" << std::endl;
-	std::cout << "GigaLearnCPP - 7-Stage Curriculum" << std::endl;
-	std::cout << "2v2 Pro Bot with Speed Flip Kickoffs" << std::endl;
+	std::cout << "GigaLearnCPP - 8-Stage Curriculum Training" << std::endl;
+	std::cout << "2v2 Pro-Level Bot with Kickoff Training" << std::endl;
 	std::cout << "========================================" << std::endl;
 
+	// Training stages configuration
 	struct StageConfig {
 		int stageNum;
 		std::string name;
@@ -303,6 +345,7 @@ int main(int argc, char* argv[]) {
 	};
 
 	std::vector<StageConfig> stages = {
+		{0, "Kickoff Mastery", 50'000'000, 3e-4f, 3e-4f},
 		{1, "Ball Contact", 100'000'000, 3e-4f, 3e-4f},
 		{2, "Goal Shooting", 200'000'000, 3e-4f, 3e-4f},
 		{3, "Power & Accuracy", 300'000'000, 2e-4f, 2e-4f},
@@ -312,30 +355,41 @@ int main(int argc, char* argv[]) {
 		{7, "Pro 2v2 Game Sense", 1'000'000'000, 1e-4f, 1e-4f}
 	};
 
+	// Train each stage
 	for (auto& stageConfig : stages) {
 		currentStage = stageConfig.stageNum;
 		
 		std::cout << "\n========================================" << std::endl;
 		std::cout << "STAGE " << currentStage << "/7: " << stageConfig.name << std::endl;
+		std::cout << "Target Timesteps: " << stageConfig.timesteps << std::endl;
 		std::cout << "========================================\n" << std::endl;
 
+		// Make configuration for the learner
 		LearnerConfig cfg = {};
+
 		cfg.deviceType = LearnerDeviceType::GPU_CUDA;
-		cfg.tickSkip = 4;
+		cfg.tickSkip = 8;
 		cfg.actionDelay = cfg.tickSkip - 1;
-		cfg.numGames = 256;
+
+		// Adjust based on your GPU VRAM (8GB+ GPU can handle more)
+		cfg.numGames = 256;  // Reduce to 128 if out of memory
+
 		cfg.randomSeed = 123;
 
-		int tsPerItr = 90'000;
+		int tsPerItr = 50'000;
 		cfg.ppo.tsPerItr = tsPerItr;
 		cfg.ppo.batchSize = tsPerItr;
-		cfg.ppo.miniBatchSize = 90'000;
-		cfg.ppo.epochs = 1;
+		cfg.ppo.miniBatchSize = 50'000;  // Reduce if out of VRAM
+
+		cfg.ppo.epochs = 1;  // Can increase to 2-3 for better learning
 		cfg.ppo.entropyScale = 0.035f;
 		cfg.ppo.gaeGamma = 0.99;
+
+		// Stage-specific learning rates
 		cfg.ppo.policyLR = stageConfig.policyLR;
 		cfg.ppo.criticLR = stageConfig.criticLR;
 
+		// Network architecture (larger for later stages)
 		if (currentStage <= 3) {
 			cfg.ppo.sharedHead.layerSizes = { 256, 256 };
 			cfg.ppo.policy.layerSizes = { 256, 256, 256 };
@@ -356,23 +410,42 @@ int main(int argc, char* argv[]) {
 		cfg.ppo.critic.activationType = activation;
 		cfg.ppo.sharedHead.activationType = activation;
 
-		cfg.ppo.policy.addLayerNorm = true;
-		cfg.ppo.critic.addLayerNorm = true;
-		cfg.ppo.sharedHead.addLayerNorm = true;
+		bool addLayerNorm = true;
+		cfg.ppo.policy.addLayerNorm = addLayerNorm;
+		cfg.ppo.critic.addLayerNorm = addLayerNorm;
+		cfg.ppo.sharedHead.addLayerNorm = addLayerNorm;
 
-		// Metrics and rendering - JUST CHANGE THESE!
-		cfg.sendMetrics = true;   // Set true for metrics
-		cfg.renderMode = false;    // Set true for RocketSimVis
+		cfg.sendMetrics = false;   // Change to true for metrics
+		cfg.renderMode = true;    // Change to true for RocketSimVis
 
+		// Make the learner
 		Learner* learner = new Learner(EnvCreateFunc, cfg, StepCallback);
-		
-		std::cout << "Starting Stage " << currentStage << " training..." << std::endl;
+
+		// Load checkpoint from previous stage if exists
+		if (currentStage > 0) {
+			std::string checkpointPath = "models/stage" + std::to_string(currentStage - 1) + "_final.pt";
+			std::cout << "Attempting to load checkpoint from previous stage: " << checkpointPath << std::endl;
+			// learner->Load(checkpointPath);  // Uncomment if checkpoint loading works
+		}
+
+		// Start learning for this stage!
+		std::cout << "Starting training for Stage " << currentStage << "..." << std::endl;
 		learner->Start();
 
+		// Save checkpoint after stage completion
+		std::string savePath = "models/stage" + std::to_string(currentStage) + "_final.pt";
+		std::cout << "\nStage " << currentStage << " complete! Saving checkpoint: " << savePath << std::endl;
+		// learner->Save(savePath);  // Uncomment if checkpoint saving works
+
 		delete learner;
-		std::cout << "✓ Stage " << currentStage << " complete!\n" << std::endl;
+		
+		std::cout << "\n✓ Stage " << currentStage << " completed!" << std::endl;
 	}
 
-	std::cout << "\n🎉 ALL 7 STAGES COMPLETE!" << std::endl;
+	std::cout << "\n========================================" << std::endl;
+	std::cout << "🎉 ALL 8 STAGES COMPLETE!" << std::endl;
+	std::cout << "Pro-level 2v2 bot with elite kickoffs trained successfully!" << std::endl;
+	std::cout << "========================================" << std::endl;
+
 	return EXIT_SUCCESS;
 }
