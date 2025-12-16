@@ -23,7 +23,7 @@ using namespace RLGC; // RLGymCPP
 // ============================================================================
 
 // Current training stage
-int currentStage = 1;
+int currentStage = 7;
 
 // Kickoff tick counter (tracks kickoff progress)
 int kickoffTick = 0;
@@ -124,12 +124,12 @@ EnvCreateResult EnvCreateFunc(int index) {
 	else if (currentStage == 2) {
 		rewards = {
 			{ new StrongTouchReward(5, 50), 30 },
-			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 50.0f },
+                	{ new VelocityBallToGoalReward(), 80.0f }, // FIXED - Removed ZeroSum!
 			{ new VelocityPlayerToBallReward(), 8.f },
 			{ new FaceBallReward(), 2.0f },
 			{ new PickupBoostReward(), 8.f },
 			{ new SaveBoostReward(), 1.0f },
-			{ new GoalReward(), 300 }
+			{ new GoalReward(), 500 }
 		};
 		terminalConditions = {
 			new NoTouchCondition(12),
@@ -217,26 +217,37 @@ EnvCreateResult EnvCreateFunc(int index) {
 	}
 	
 	// ========================================================================
-	// STAGE 7: PRO 2V2 GAME SENSE (1B steps)
-	// ========================================================================
-	else if (currentStage == 7) {
-		rewards = {
-			{ new AirReward(), 10.0f },
-			{ new StrongTouchReward(25, 180), 200 },
-			{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 100.0f },
-			{ new VelocityPlayerToBallReward(), 6.f },
-			{ new FaceBallReward(), 1.0f },
-			{ new PickupBoostReward(), 12.f },
-			{ new SaveBoostReward(), 3.0f },
-			{ new ZeroSumReward(new BumpReward(), 0.5f), 40 },
-			{ new ZeroSumReward(new DemoReward(), 0.5f), 120 },
-			{ new GoalReward(), 500 }
-		};
-		terminalConditions = {
-			new NoTouchCondition(10),
-			new GoalScoreCondition()
-		};
-	}
+// STAGE 7: PRO 2V2 GAME SENSE (ANTI-BALLCHASING)
+// ========================================================================
+else if (currentStage == 7) {
+	rewards = {
+		// Ball play (moderate)
+		{ new AirReward(), 8.0f },
+		{ new StrongTouchReward(25, 180), 120 },  // Reduced from 200
+		
+		// Goal direction (ZeroSum OK for competitive)
+		{ new ZeroSumReward(new VelocityBallToGoalReward(), 1), 100.0f },
+		
+		// Movement (HEAVILY REDUCED)
+		{ new VelocityPlayerToBallReward(), 2.f },  // Was 6, now 2!
+		{ new FaceBallReward(), 0.3f },             // Was 1.0, now 0.3!
+		
+		// Boost management
+		{ new PickupBoostReward(), 12.f },
+		{ new SaveBoostReward(), 5.0f },            // Increased from 3
+		
+		// Competitive
+		{ new ZeroSumReward(new BumpReward(), 0.5f), 40 },
+		{ new ZeroSumReward(new DemoReward(), 0.5f), 120 },
+		
+		// GOALS ARE EVERYTHING
+		{ new GoalReward(), 800 }  // Increased from 500
+	};
+	terminalConditions = {
+		new NoTouchCondition(10),
+		new GoalScoreCondition()
+	};
+}
 
 	// 2v2 arena
 	int playersPerTeam = 2;
@@ -303,13 +314,13 @@ int main(int argc, char* argv[]) {
 	};
 
 	std::vector<StageConfig> stages = {
-		{1, "Ball Contact", 100'000'000, 3e-4f, 3e-4f},
-		{2, "Goal Shooting", 200'000'000, 3e-4f, 3e-4f},
-		{3, "Power & Accuracy", 300'000'000, 2e-4f, 2e-4f},
-		{4, "Aerial Fundamentals", 500'000'000, 2e-4f, 2e-4f},
-		{5, "Air Dribbles", 600'000'000, 1.5e-4f, 1.5e-4f},
-		{6, "Double Taps", 600'000'000, 1.5e-4f, 1.5e-4f},
-		{7, "Pro 2v2 Game Sense", 1'000'000'000, 1e-4f, 1e-4f}
+		//{1, "Ball Contact", 100'000'000, 3e-4f, 3e-4f},
+  // {2, "Goal Shooting", 200'000'000, 3e-4f, 3e-4f},
+    {3, "Power & Accuracy", 300'000'000, 2e-4f, 2e-4f},
+   // {4, "Aerial Fundamentals", 500'000'000, 2e-4f, 2e-4f},
+   // {5, "Air Dribbles", 600'000'000, 1.5e-4f, 1.5e-4f},
+   // {6, "Double Taps", 600'000'000, 1.5e-4f, 1.5e-4f},
+	//	{7, "Pro 2v2 Game Sense", 1'000'000'000, 1e-4f, 1e-4f}
 	};
 
 	for (auto& stageConfig : stages) {
