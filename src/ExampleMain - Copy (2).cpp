@@ -17,21 +17,7 @@ using namespace RLGC;
 // ===============================
 // GLOBAL STAGE TRACKER
 // ===============================
-static int currentStage = 3;
-
-// ===============================
-// CUSTOM REWARD: Punish Low Boost Flips
-// ===============================
-class LowBoostFlipPenalty : public Reward {
-public:
-	virtual float GetReward(const Player& player, const GameState& state, bool isFinal) override {
-		// If player is in air with low boost, penalize
-		if (!player.isOnGround && player.boost < 20) {
-			return -0.2f;  // Penalty for being airborne with no boost
-		}
-		return 0.0f;
-	}
-};
+static int currentStage = 2;
 
 // ===============================
 // ENV CREATION - 7 STAGE CURRICULUM
@@ -71,16 +57,14 @@ EnvCreateResult EnvCreateFunc(int index) {
                 { new ZeroSumReward(new VelocityBallToGoalReward(),1), 80 },
                 { new VelocityPlayerToBallReward(), 6 },
                 { new FaceBallReward(), 1.5f },
-                { new PickupBoostReward(), 15 },  // Increased weight
-                { new SaveBoostReward(), 3 },     // Increased weight
+                { new PickupBoostReward(), 10 },
+                { new SaveBoostReward(), 2 },
                 { new ZeroSumReward(new BumpReward(),0.5f), 30 },
                 { new GoalReward(), 400 },
-                { new AirReward(), 0.2f },
-                { new RLGC::WavedashReward(), 50.0f },  // Built-in wavedash
-                { new LowBoostFlipPenalty(), 20.0f }    // No flip spam when low boost
+                { new AirReward(), 0.2f }  // HIGHER - allow flips now
             };
             terminalConditions = { new NoTouchCondition(10), new GoalScoreCondition() };
-            break; 
+            break;
         case 4: // Aerial Fundamentals
             rewards = {
                 { new AirReward(), 0.25f },
@@ -272,14 +256,10 @@ int main(int argc, char* argv[]) {
         cfg.renderMode = false;
     }
 
-    std::cout << "Starting Stage " << currentStage << "...\n" << std::endl;
+    std::cout << "Starting Stage 1: Ball Contact..." << std::endl;
+    std::cout << "Bot will be punished for flipping (AirReward=0.01)\n" << std::endl;
 
     Learner* learner = new Learner(EnvCreateFunc, cfg, StepCallback);
-    
-    // FORCE STAGE OVERRIDE (happens after checkpoint load!)
-    currentStage = 3;  // Change this number to force a stage
-    std::cout << "\n🔧 MANUALLY FORCED TO STAGE " << currentStage << "!\n" << std::endl;
-    
     learner->Start();
     delete learner;
 

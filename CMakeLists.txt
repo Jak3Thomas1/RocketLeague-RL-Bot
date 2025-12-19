@@ -1,9 +1,10 @@
 cmake_minimum_required (VERSION 3.8)
-
 project("GigaLearnBot")
 
-file(GLOB_RECURSE FILES_SRC "src/*.cpp" "src/*.h" "src/*.hpp")
-add_executable(GigaLearnBot ${FILES_SRC})
+# Don't use GLOB - be explicit about what files we need
+add_executable(GigaLearnBot 
+    src/ExampleMain.cpp
+)
 
 # Set C++ version to 20
 set_target_properties(GigaLearnBot PROPERTIES LINKER_LANGUAGE CXX)
