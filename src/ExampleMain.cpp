@@ -25,116 +25,86 @@ static int currentStage = 3;
 class LowBoostFlipPenalty : public Reward {
 public:
 	virtual float GetReward(const Player& player, const GameState& state, bool isFinal) override {
-		// If player is in air with low boost, penalize
 		if (!player.isOnGround && player.boost < 20) {
-			return -0.2f;  // Penalty for being airborne with no boost
+			return -0.2f;
 		}
 		return 0.0f;
 	}
 };
 
 // ===============================
-// ENV CREATION - 7 STAGE CURRICULUM
+// CUSTOM REWARD: AERIAL TOUCH BONUS
+// ===============================
+class AerialTouchBonus : public Reward {
+public:
+	virtual float GetReward(const Player& player, const GameState& state, bool isFinal) override {
+		// MASSIVE bonus for touching ball while in air
+		if (player.ballTouchedStep && !player.isOnGround) {
+			float height = player.pos.z;
+			
+			// Scale reward by height
+			if (height > 200) {
+				float heightBonus = (height - 200) / 100.0f;  // +1 per 100 units above 200
+				return 50.0f + heightBonus;  // Base 50 + height scaling
+			}
+		}
+		return 0.0f;
+	}
+};
+
+// ===============================
+// ENV CREATION - AERIAL HYBRID STAGE 3
 // ===============================
 EnvCreateResult EnvCreateFunc(int index) {
     std::vector<WeightedReward> rewards;
     std::vector<TerminalCondition*> terminalConditions;
 
-    switch (currentStage) {
-        case 1: // Ball Contact - DISCOURAGE FLIPS
-            rewards = {
-                { new StrongTouchReward(5,50), 100 },
-                { new FaceBallReward(), 5 },
-                { new VelocityPlayerToBallReward(), 10 },
-                { new PickupBoostReward(), 5 },
-                { new GoalReward(), 200 },
-                { new AirReward(), 0.01f }  // VERY LOW - punish being in air
-            };
-            terminalConditions = { new NoTouchCondition(15), new GoalScoreCondition() };
-            break;
-        case 2: // Goal Shooting - STILL DISCOURAGE FLIPS
-            rewards = {
-                { new StrongTouchReward(5,50), 15 },
-                { new ZeroSumReward(new VelocityBallToGoalReward(), 1), 80 },
-                { new VelocityPlayerToBallReward(), 8 },
-                { new FaceBallReward(), 4 },
-                { new PickupBoostReward(), 8 },
-                { new SaveBoostReward(), 1 },
-                { new GoalReward(), 400 },
-                { new AirReward(), 0.01f }  // VERY LOW - keep discouraging flips
-            };
-            terminalConditions = { new NoTouchCondition(12), new GoalScoreCondition() };
-            break;
-        case 3: // Power & Accuracy - FLIPS UNLOCKED!
-            rewards = {
-                { new StrongTouchReward(20,150), 150 },
-                { new ZeroSumReward(new VelocityBallToGoalReward(),1), 80 },
-                { new VelocityPlayerToBallReward(), 6 },
-                { new FaceBallReward(), 1.5f },
-                { new PickupBoostReward(), 15 },  // Increased weight
-                { new SaveBoostReward(), 3 },     // Increased weight
-                { new ZeroSumReward(new BumpReward(),0.5f), 30 },
-                { new GoalReward(), 400 },
-                { new AirReward(), 0.2f },
-                { new RLGC::WavedashReward(), 50.0f },  // Built-in wavedash
-                { new LowBoostFlipPenalty(), 20.0f }    // No flip spam when low boost
-            };
-            terminalConditions = { new NoTouchCondition(10), new GoalScoreCondition() };
-            break; 
-        case 4: // Aerial Fundamentals
-            rewards = {
-                { new AirReward(), 0.25f },
-                { new StrongTouchReward(20,150), 200 },
-                { new ZeroSumReward(new VelocityBallToGoalReward(),1), 100 },
-                { new VelocityPlayerToBallReward(), 5 },
-                { new FaceBallReward(), 1 },
-                { new PickupBoostReward(), 12 },
-                { new SaveBoostReward(), 3 },
-                { new GoalReward(), 500 }
-            };
-            terminalConditions = { new NoTouchCondition(10), new GoalScoreCondition() };
-            break;
-        case 5: // Air Dribbles
-            rewards = {
-                { new AirReward(), 25 },
-                { new StrongTouchReward(30,200), 300 },
-                { new ZeroSumReward(new VelocityBallToGoalReward(),1), 120 },
-                { new VelocityPlayerToBallReward(), 8 },
-                { new PickupBoostReward(), 15 },
-                { new SaveBoostReward(), 4 },
-                { new GoalReward(), 600 }
-            };
-            terminalConditions = { new NoTouchCondition(10), new GoalScoreCondition() };
-            break;
-        case 6: // Double Taps & Wall Play
-            rewards = {
-                { new AirReward(), 20 },
-                { new StrongTouchReward(30,200), 350 },
-                { new ZeroSumReward(new VelocityBallToGoalReward(),1), 150 },
-                { new VelocityPlayerToBallReward(), 10 },
-                { new FaceBallReward(), 0.8f },
-                { new PickupBoostReward(), 15 },
-                { new SaveBoostReward(), 4 },
-                { new GoalReward(), 800 }
-            };
-            terminalConditions = { new NoTouchCondition(10), new GoalScoreCondition() };
-            break;
-        case 7: // Pro 2v2 Game Sense
-            rewards = {
-                { new AirReward(), 8 },
-                { new StrongTouchReward(25,180), 120 },
-                { new ZeroSumReward(new VelocityBallToGoalReward(),1), 100 },
-                { new VelocityPlayerToBallReward(), 2 },
-                { new FaceBallReward(), 0.3f },
-                { new PickupBoostReward(), 12 },
-                { new SaveBoostReward(), 5 },
-                { new ZeroSumReward(new BumpReward(),0.5f), 40 },
-                { new ZeroSumReward(new DemoReward(),0.5f), 120 },
-                { new GoalReward(), 800 }
-            };
-            terminalConditions = { new NoTouchCondition(10), new GoalScoreCondition() };
-            break;
-    }
+    // ========================================================================
+    // STAGE 3: POWER & ACCURACY + FORCED AERIAL LEARNING
+    // ========================================================================
+    // This balances ground skills with strong aerial incentives
+    rewards = {
+        // ====================================================================
+        // AERIAL REWARDS - MASSIVE TO ENCOURAGE AERIAL PLAY
+        // ====================================================================
+        { new AerialTouchBonus(), 200.0f },       // HUGE bonus for aerial touches!
+        { new AirReward(), 80.0f },               // Big reward for being in air (was 0.2!)
+        
+        // ====================================================================
+        // GROUND MECHANICS - REDUCED BUT STILL STRONG
+        // ====================================================================
+        { new StrongTouchReward(20,150), 60 },    // Still reward power (was 150)
+        { new ZeroSumReward(new VelocityBallToGoalReward(),1), 80 },  // Keep shooting
+        
+        // ====================================================================
+        // MOVEMENT - LESS BALL CHASING, MORE THINKING
+        // ====================================================================
+        { new VelocityPlayerToBallReward(), 2 },  // REDUCED (was 6) - less chasing
+        { new FaceBallReward(), 0.5f },           // REDUCED (was 1.5) - less focus on ball
+        
+        // ====================================================================
+        // BOOST MANAGEMENT - CRITICAL FOR AERIALS
+        // ====================================================================
+        { new PickupBoostReward(), 20 },          // INCREASED (was 15) - need boost for aerials
+        { new SaveBoostReward(), 5 },             // INCREASED (was 3) - manage boost better
+        
+        // ====================================================================
+        // ADVANCED MECHANICS
+        // ====================================================================
+        { new ZeroSumReward(new BumpReward(),0.5f), 30 },
+        { new WavedashReward(), 50.0f },
+        { new LowBoostFlipPenalty(), 20.0f },
+        
+        // ====================================================================
+        // ULTIMATE GOAL - INCREASED TO OFFSET AERIAL RISK
+        // ====================================================================
+        { new GoalReward(), 500 }  // INCREASED (was 400) - goals still most important
+    };
+
+    terminalConditions = { 
+        new NoTouchCondition(15),  // LONGER timeout (was 10) - more time to aerial
+        new GoalScoreCondition() 
+    };
 
     int playersPerTeam = 2;
     auto arena = Arena::Create(GameMode::SOCCAR);
@@ -144,7 +114,7 @@ EnvCreateResult EnvCreateFunc(int index) {
     }
 
     EnvCreateResult result = {};
-    result.actionParser = new DefaultAction();  // NO CUSTOM PARSER
+    result.actionParser = new DefaultAction();
     result.obsBuilder = new AdvancedObs();
     result.stateSetter = new KickoffState();
     result.terminalConditions = terminalConditions;
@@ -154,40 +124,61 @@ EnvCreateResult EnvCreateFunc(int index) {
 }
 
 // ===============================
-// STEP CALLBACK (metrics & auto-stage)
+// STEP CALLBACK - TRACK AERIAL PROGRESS
 // ===============================
 void StepCallback(Learner* learner, const std::vector<GameState>& states, Report& report) {
     static int timestepsInStage = 0;
     static int goalsScored = 0;
     static int stepsProcessed = 0;
+    static int aerialTouches = 0;
+    static int groundTouches = 0;
+    static int airTime = 0;
     
     for (auto& state : states) {
         if (state.goalScored) goalsScored++;
         stepsProcessed++;
+        
+        // Track aerial vs ground behavior
+        for (auto& player : state.players) {
+            // Count aerial touches
+            if (player.ballTouchedStep && !player.isOnGround) {
+                aerialTouches++;
+            }
+            
+            // Count ground touches
+            if (player.ballTouchedStep && player.isOnGround) {
+                groundTouches++;
+            }
+            
+            // Track time in air
+            if (!player.isOnGround) {
+                airTime++;
+            }
+        }
     }
     
     timestepsInStage += states.size();
 
-    // Auto stage advancement
-    if (timestepsInStage >= 100000000) {  // 100M steps minimum per stage
-        float goalRate = (float)goalsScored / (float)stepsProcessed;
+    // Report aerial learning metrics
+    if (stepsProcessed > 0) {
+        float aerialTouchRate = (float)aerialTouches / (float)stepsProcessed * 100.0f;
+        float groundTouchRate = (float)groundTouches / (float)stepsProcessed * 100.0f;
+        float airTimePercent = (float)airTime / (float)(stepsProcessed * 4) * 100.0f;  // 4 players
         
-        if (goalRate > 0.15f && currentStage < 7) {  // 15% goal rate to advance
-            currentStage++;
-            std::cout << "\n========================================" << std::endl;
-            std::cout << "✅ ADVANCED TO STAGE " << currentStage << std::endl;
-            if (currentStage == 3) {
-                std::cout << "🔓 FLIPS NOW REWARDED (AirReward increased)!" << std::endl;
-            }
-            std::cout << "========================================\n" << std::endl;
-            timestepsInStage = 0;
-            goalsScored = 0;
-            stepsProcessed = 0;
-        }
+        report.AddAvg("Training/Aerial Touch Rate %", aerialTouchRate);
+        report.AddAvg("Training/Ground Touch Rate %", groundTouchRate);
+        report.AddAvg("Training/Air Time %", airTimePercent);
+        report.AddAvg("Training/Total Aerial Touches", (float)aerialTouches);
     }
-
+    
     report.AddAvg("Training/Current Stage", (float)currentStage);
     report.AddAvg("Training/Timesteps In Stage", (float)timestepsInStage);
+    
+    // Goal rate
+    if (stepsProcessed > 0) {
+        float goalRate = (float)goalsScored / (float)stepsProcessed * 100.0f;
+        report.AddAvg("Training/Goal Rate %", goalRate);
+    }
 }
 
 // ===============================
@@ -209,23 +200,24 @@ int main(int argc, char* argv[]) {
     RocketSim::Init("C:\\Users\\Jake\\Videos\\Jake\\GigaLearnCPP-Leak-main\\collision_meshes");
 
     std::cout << "========================================" << std::endl;
-    std::cout << "🎮 7-STAGE - REWARD-BASED FLIP CONTROL" << std::endl;
+    std::cout << "🚀 AERIAL HYBRID TRAINING" << std::endl;
     std::cout << "========================================" << std::endl;
-    std::cout << "FLIP CONTROL VIA REWARDS:" << std::endl;
-    std::cout << "  Stage 1-2: AirReward=0.01 (punish flips)" << std::endl;
-    std::cout << "  Stage 3+:  AirReward=0.2+ (reward flips)" << std::endl;
-    std::cout << "\nPerformance:" << std::endl;
-    std::cout << "  • 1024 GAMES" << std::endl;
-    std::cout << "  • 512 network" << std::endl;
-    std::cout << "  • Expected SPS: 100k+" << std::endl;
-    std::cout << "\nStages:" << std::endl;
-    std::cout << "  1. Ball Contact (0-100M)" << std::endl;
-    std::cout << "  2. Goal Shooting (100-200M)" << std::endl;
-    std::cout << "  3. Power & Accuracy (200-300M) ← FLIPS REWARDED" << std::endl;
-    std::cout << "  4. Aerial Fundamentals (300-400M)" << std::endl;
-    std::cout << "  5. Air Dribbles (400-500M)" << std::endl;
-    std::cout << "  6. Double Taps (500-600M)" << std::endl;
-    std::cout << "  7. Pro 2v2 (600M+)" << std::endl;
+    std::cout << "STRATEGY:" << std::endl;
+    std::cout << "  • Keep strong ground game ✓" << std::endl;
+    std::cout << "  • Add aerial capability NEW!" << std::endl;
+    std::cout << "  • Balance both playstyles" << std::endl;
+    std::cout << "\nREWARD CHANGES:" << std::endl;
+    std::cout << "  • AirReward: 0.2 → 80 (400x increase!)" << std::endl;
+    std::cout << "  • Aerial Touch Bonus: +50-200 per touch" << std::endl;
+    std::cout << "  • Ground touches: Still rewarded (reduced)" << std::endl;
+    std::cout << "\nEXPECTED TIMELINE:" << std::endl;
+    std::cout << "  • First 500M steps: Learning aerials, reward may dip" << std::endl;
+    std::cout << "  • 500M-1.5B steps: Aerials improving, reward climbing" << std::endl;
+    std::cout << "  • 1.5B-3B steps: Hybrid playstyle, better than before" << std::endl;
+    std::cout << "\nTARGET METRICS:" << std::endl;
+    std::cout << "  • Aerial Touch Rate: 5-10% (currently ~1%)" << std::endl;
+    std::cout << "  • Air Time: 20-30% (currently ~5-10%)" << std::endl;
+    std::cout << "  • Goals: Maintain or increase" << std::endl;
     std::cout << "========================================\n" << std::endl;
 
     LearnerConfig cfg = {};
@@ -246,6 +238,7 @@ int main(int argc, char* argv[]) {
     cfg.ppo.policyLR = 1.5e-4f;
     cfg.ppo.criticLR = 1.5e-4f;
 
+    // KEEP SAME MODEL SIZE - 512x512
     cfg.ppo.sharedHead.layerSizes = {512, 512};
     cfg.ppo.policy.layerSizes = {512, 512};
     cfg.ppo.critic.layerSizes = {512, 512};
@@ -266,19 +259,23 @@ int main(int argc, char* argv[]) {
         cfg.renderMode = true;
         cfg.sendMetrics = false;
         cfg.ppo.deterministic = true;
-        std::cout << "RENDER MODE\n" << std::endl;
+        std::cout << "🎥 RENDER MODE\n" << std::endl;
     } else {
         cfg.sendMetrics = true;
-        cfg.renderMode = false;
+        cfg.renderMode = true;  // Keep render on to watch in RocketSimVis
     }
 
-    std::cout << "Starting Stage " << currentStage << "...\n" << std::endl;
+    std::cout << "📊 Current: 7.7B timesteps" << std::endl;
+    std::cout << "🎯 Target: 10-11B timesteps (add 2-3B more)" << std::endl;
+    std::cout << "⏱️  ETA: ~20-30 hours at current SPS\n" << std::endl;
+    
+    std::cout << "🚀 Starting Aerial Hybrid Training...\n" << std::endl;
+    std::cout << "⚠️  WARNING: Reward may DROP initially while learning aerials!" << std::endl;
+    std::cout << "    This is NORMAL. It will recover and exceed previous levels.\n" << std::endl;
 
     Learner* learner = new Learner(EnvCreateFunc, cfg, StepCallback);
     
-    // FORCE STAGE OVERRIDE (happens after checkpoint load!)
-    currentStage = 3;  // Change this number to force a stage
-    std::cout << "\n🔧 MANUALLY FORCED TO STAGE " << currentStage << "!\n" << std::endl;
+    std::cout << "\n✅ TRAINING ACTIVE - LOADING CHECKPOINT 7.7B...\n" << std::endl;
     
     learner->Start();
     delete learner;

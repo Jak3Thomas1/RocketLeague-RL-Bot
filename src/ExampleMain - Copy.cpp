@@ -20,6 +20,20 @@ using namespace RLGC;
 static int currentStage = 3;
 
 // ===============================
+// CUSTOM REWARD: Punish Low Boost Flips
+// ===============================
+class LowBoostFlipPenalty : public Reward {
+public:
+	virtual float GetReward(const Player& player, const GameState& state, bool isFinal) override {
+		// If player is in air with low boost, penalize
+		if (!player.isOnGround && player.boost < 20) {
+			return -0.2f;  // Penalty for being airborne with no boost
+		}
+		return 0.0f;
+	}
+};
+
+// ===============================
 // ENV CREATION - 7 STAGE CURRICULUM
 // ===============================
 EnvCreateResult EnvCreateFunc(int index) {
@@ -57,14 +71,16 @@ EnvCreateResult EnvCreateFunc(int index) {
                 { new ZeroSumReward(new VelocityBallToGoalReward(),1), 80 },
                 { new VelocityPlayerToBallReward(), 6 },
                 { new FaceBallReward(), 1.5f },
-                { new PickupBoostReward(), 10 },
-                { new SaveBoostReward(), 2 },
+                { new PickupBoostReward(), 15 },  // Increased weight
+                { new SaveBoostReward(), 3 },     // Increased weight
                 { new ZeroSumReward(new BumpReward(),0.5f), 30 },
                 { new GoalReward(), 400 },
-                { new AirReward(), 0.2f }  // HIGHER - allow flips now
+                { new AirReward(), 0.2f },
+                { new RLGC::WavedashReward(), 50.0f },  // Built-in wavedash
+                { new LowBoostFlipPenalty(), 20.0f }    // No flip spam when low boost
             };
             terminalConditions = { new NoTouchCondition(10), new GoalScoreCondition() };
-            break;
+            break; 
         case 4: // Aerial Fundamentals
             rewards = {
                 { new AirReward(), 0.25f },
